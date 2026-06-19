@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DB Engine - In-Browser SQL Database</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#21262d;--border:#30363d;--text:#c9d1d9;--text2:#8b949e;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#bc8cff;--orange:#f0883e;--pink:#f778ba;--keyword:#ff7b72;--string:#a5d6ff;--number:#79c0ff;--func:#d2a8ff;--comment:#8b949e;--operator:#ff7b72}
+body{font-family:'Cascadia Code','Fira Code',Consolas,monospace;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+.app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:48px 1fr 1fr;height:100vh}
+.header{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:16px}
+.header h1{font-size:14px;color:var(--accent);white-space:nowrap}
+.header .tabs{display:flex;gap:2px;flex:1}
+.header .tab{padding:8px 16px;background:transparent;border:none;color:var(--text2);cursor:pointer;font-family:inherit;font-size:12px;border-bottom:2px solid transparent}
+.header .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.header .tab:hover{color:var(--text)}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:12px}
+.sidebar h3{font-size:11px;text-transform:uppercase;color:var(--text2);margin:12px 0 6px;letter-spacing:1px}
+.sidebar h3:first-child{margin-top:0}
+.schema-item{padding:4px 8px;font-size:12px;color:var(--text);cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:6px}
+.schema-item:hover{background:var(--surface2)}
+.schema-item .icon{color:var(--accent);font-size:10px}
+.col-item{padding:2px 8px 2px 24px;font-size:11px;color:var(--text2);display:flex;justify-content:space-between}
+.col-item .type{color:var(--yellow);font-size:10px}
+.main{display:flex;flex-direction:column;overflow:hidden}
+.editor-area{display:flex;flex-direction:column;border-bottom:1px solid var(--border);height:220px;min-height:120px}
+.editor-header{display:flex;align-items:center;padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--border);gap:8px}
+.editor-header .title{font-size:11px;color:var(--text2);flex:1}
+.editor-wrapper{position:relative;flex:1;overflow:hidden}
+.editor-line-numbers{position:absolute;left:0;top:0;bottom:0;width:40px;background:var(--surface);border-right:1px solid var(--border);padding:8px 0;text-align:right;font-size:12px;color:var(--text2);line-height:1.6;overflow:hidden;user-select:none}
+.editor{position:absolute;left:40px;top:0;right:0;bottom:0;padding:8px 12px;background:var(--bg);color:var(--text);border:none;outline:none;resize:none;font-family:inherit;font-size:13px;line-height:1.6;white-space:pre;overflow:auto;tab-size:2}
+.highlight-layer{position:absolute;left:40px;top:0;right:0;bottom:0;padding:8px 12px;pointer-events:none;white-space:pre;font-size:13px;line-height:1.6;overflow:hidden;tab-size:2}
+.results-area{flex:1;overflow:auto;padding:12px}
+.results-header{display:flex;align-items:center;padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--border);gap:8px;font-size:11px;color:var(--text2)}
+.results-header .exec-time{color:var(--green);margin-left:auto}
+.results-header .row-count{color:var(--yellow)}
+table.results{width:100%;border-collapse:collapse;font-size:12px}
+table.results th{background:var(--surface2);padding:6px 12px;text-align:left;border-bottom:2px solid var(--accent);position:sticky;top:0;font-weight:600;color:var(--accent)}
+table.results td{padding:5px 12px;border-bottom:1px solid var(--border)}
+table.results tr:hover td{background:rgba(88,166,255,0.05)}
+table.results .null-val{color:var(--text2);font-style:italic}
+button.execute-btn{padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer}
+button.execute-btn:hover{opacity:0.9}
+button.sm-btn{padding:3px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer}
+button.sm-btn:hover{border-color:var(--accent)}
+select.sm-select{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:3px 8px;font-family:inherit;font-size:11px}
+.message{padding:12px;border-radius:4px;margin:8px 0;font-size:12px}
+.message.success{background:rgba(63,185,80,0.1);border:1px solid var(--green);color:var(--green)}
+.message.error{background:rgba(248,81,73,0.1);border:1px solid var(--red);color:var(--red)}
+.message.info{background:rgba(88,166,255,0.1);border:1px solid var(--accent);color:var(--accent)}
+.vis-panel{display:none;flex-direction:column;overflow:auto;padding:12px}
+.vis-panel.active{display:flex}
+.vis-panel h3{font-size:12px;color:var(--accent);margin-bottom:8px}
+.tree-container,.page-container{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0}
+.tree-node{border:1px solid var(--accent);border-radius:4px;padding:6px 10px;background:var(--surface);font-size:11px;position:relative}
+.tree-node.leaf{border-color:var(--green)}
+.tree-node .keys{color:var(--text);margin-bottom:2px}
+.tree-node .ptr{color:var(--text2);font-size:10px}
+.tree-arrow{color:var(--text2);font-size:11px;display:flex;align-items:center}
+.page-block{width:120px;border:1px solid var(--border);border-radius:4px;background:var(--surface);padding:6px;font-size:10px}
+.page-block .pid{color:var(--accent);font-weight:600;margin-bottom:4px}
+.page-block .rows{color:var(--text2)}
+.page-block .bar{height:4px;background:var(--surface2);border-radius:2px;margin-top:4px;overflow:hidden}
+.page-block .bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.3s}
+.exec-plan{padding:8px;font-size:12px}
+.exec-plan .step{padding:4px 0 4px 16px;border-left:2px solid var(--border);margin-left:8px}
+.exec-plan .step.op{color:var(--keyword);font-weight:600}
+.exec-plan .step.detail{color:var(--text2)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>DB Engine</h1>
+    <div class="tabs">
+      <button class="tab active" data-tab="editor">Editor</button>
+      <button class="tab" data-tab="btree">B+ Tree</button>
+      <button class="tab" data-tab="storage">Storage</button>
+      <button class="tab" data-tab="plan">Execution Plan</button>
+    </div>
+  </div>
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main">
+    <div class="editor-area" id="editorPanel">
+      <div class="editor-header">
+        <span class="title">SQL Query</span>
+        <select class="sm-select" id="exampleQueries">
+          <option value="">Example Queries</option>
+          <option value="SELECT * FROM employees;">All Employees</option>
+          <option value="SELECT e.name, d.dept_name FROM employees e JOIN departments d ON e.dept_id = d.id;">Employees with Departments</option>
+          <option value="SELECT dept_id, COUNT(*) as cnt FROM employees GROUP BY dept_id;">Count by Dept</option>
+          <option value="SELECT * FROM employees WHERE salary > 70000 ORDER BY salary DESC;">High Salary</option>
+          <option value="SELECT * FROM employees WHERE name LIKE '%john%';">Search Name</option>
+          <option value="SELECT * FROM employees WHERE dept_id IN (1, 2);">In Filter</option>
+          <option value="SELECT * FROM employees WHERE salary BETWEEN 50000 AND 80000;">Salary Range</option>
+          <option value="SELECT DISTINCT dept_id FROM employees;">Distinct Depts</option>
+          <option value="SELECT e.name, d.dept_name, o.amount FROM employees e JOIN departments d ON e.dept_id = d.id JOIN orders o ON o.emp_id = e.id;">Triple Join</option>
+          <option value="SELECT dept_id, AVG(salary) as avg_sal, MAX(salary) as max_sal FROM employees GROUP BY dept_id;">Dept Salary Stats</option>
+          <option value="EXPLAIN SELECT * FROM employees WHERE salary > 70000;">Explain Plan</option>
+          <option value="CREATE INDEX idx_emp_name ON employees (name);">Create Index</option>
+        </select>
+        <button class="execute-btn" onclick="runQuery()">▶ Run</button>
+        <button class="sm-btn" onclick="clearEditor()">Clear</button>
+      </div>
+      <div class="editor-wrapper">
+        <div class="editor-line-numbers" id="lineNumbers">1</div>
+        <div class="highlight-layer" id="highlight"></div>
+        <textarea class="editor" id="editor" spellcheck="false" placeholder="Write SQL here...">SELECT * FROM employees WHERE salary > 70000;</textarea>
+      </div>
+    </div>
+    <div class="results-area" id="resultsArea"></div>
+    <div class="vis-panel" id="btreePanel">
+      <h3>B+ Tree Indexes</h3>
+      <div class="tree-container" id="btreeVis"></div>
+    </div>
+    <div class="vis-panel" id="storagePanel">
+      <h3>Storage Pages</h3>
+      <div class="page-container" id="storageVis"></div>
+    </div>
+    <div class="vis-panel" id="planPanel">
+      <h3>Query Execution Plan</h3>
+      <div class="exec-plan" id="planVis"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB = {
+  tables: {},
+  indexes: {},
+  pages: {},
+  nextId: 100
+};
+
+const TYPES = { INTEGER: 'INTEGER', TEXT: 'TEXT', BOOLEAN: 'BOOLEAN', FLOAT: 'FLOAT' };
+
+function createTable(name, columns) {
+  if (DB.tables[name]) throw new Error(`Table '${name}' already exists`);
+  DB.tables[name] = { columns, rows: [], autoId: 1 };
+  DB.pages[name] = [];
+  allocatePage(name);
+  updateSidebar();
+  return { message: `Table '${name}' created with ${columns.length} columns` };
+}
+
+function allocatePage(name) {
+  const pageId = DB.pages[name].length;
+  DB.pages[name].push({ id: pageId, rows: [], capacity: 50 });
+  return pageId;
+}
+
+function insertRow(name, values) {
+  const table = DB.tables[name];
+  if (!table) throw new Error(`Table '${name}' not found`);
+  if (values.length !== table.columns.length) throw new Error(`Expected ${table.columns.length} values, got ${values.length}`);
+  const row = { _id: table.autoId++ };
+  table.columns.forEach((col, i) => {
+    let val = values[i];
+    if (col.type === TYPES.INTEGER || col.type === TYPES.FLOAT) {
+      val = val === 'NULL' ? null : Number(val);
+      if (isNaN(val) && val !== null) throw new Error(`Invalid ${col.type}: ${values[i]}`);
+    } else if (col.type === TYPES.BOOLEAN) {
+      val = val === 'NULL' ? null : (val === 'true' || val === '1' || val === 'TRUE');
+    } else {
+      val = val === 'NULL' ? null : String(val);
+    }
+    row[col.name] = val;
+  });
+  table.rows.push(row);
+  const page = DB.pages[name][DB.pages[name].length - 1];
+  page.rows.push(row);
+  if (page.rows.length >= page.capacity) allocatePage(name);
+  updateStorageVis();
+  return { message: `1 row inserted into '${name}'`, rowsAffected: 1 };
+}
+
+function deleteRows(name, whereFn) {
+  const table = DB.tables[name];
+  if (!table) throw new Error(`Table '${name}' not found`);
+  const before = table.rows.length;
+  table.rows = table.rows.filter(r => !whereFn(r));
+  const deleted = before - table.rows.length;
+  rebuildPages(name);
+  updateStorageVis();
+  return { message: `${deleted} row(s) deleted`, rowsAffected: deleted };
+}
+
+function updateRows(name, setFn, whereFn) {
+  const table = DB.tables[name];
+  if (!table) throw new Error(`Table '${name}' not found`);
+  let updated = 0;
+  table.rows.forEach(r => {
+    if (!whereFn || whereFn(r)) { setFn(r); updated++; }
+  });
+  rebuildPages(name);
+  updateStorageVis();
+  return { message: `${updated} row(s) updated`, rowsAffected: updated };
+}
+
+function rebuildPages(name) {
+  const table = DB.tables[name];
+  DB.pages[name] = [];
+  let page = allocatePage(name);
+  table.rows.forEach(r => {
+    DB.pages[name][page].rows.push(r);
+    if (DB.pages[name][page].rows.length >= DB.pages[name][page].capacity) page = allocatePage(name);
+  });
+}
+
+function createIndex(table, column) {
+  if (!DB.tables[table]) throw new Error(`Table '${table}' not found`);
+  const key = `${table}.${column}`;
+  const index = { table, column, tree: { root: null } };
+  const rows = DB.tables[table].rows;
+  const entries = rows.map(r => ({ key: r[column], rid: r._id })).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  if (entries.length === 0) {
+    index.tree.root = { type: 'leaf', keys: [], rids: [], next: null };
+  } else {
+    const leafSize = 4;
+    const leaves = [];
+    for (let i = 0; i < entries.length; i += leafSize) {
+      const chunk = entries.slice(i, i + leafSize);
+      leaves.push({ type: 'leaf', keys: chunk.map(e => e.key), rids: chunk.map(e => e.rid), next: null, parent: null });
+    }
+    for (let i = 0; i < leaves.length - 1; i++) leaves[i].next = leaves[i + 1];
+    if (leaves.length === 1) {
+      index.tree.root = leaves[0];
+    } else {
+      let level = leaves;
+      while (level.length > 1) {
+        const parent = [];
+        const ptrSize = 3;
+        for (let i = 0; i < level.length; i += ptrSize) {
+          const children = level.slice(i, i + ptrSize);
+          const keys = children.slice(1).map(c => c.keys[0]);
+          parent.push({ type: 'internal', keys, children, parent: null });
+        }
+        level = parent;
+      }
+      index.tree.root = level[0];
+    }
+  }
+  DB.indexes[key] = index;
+  updateBtreeVis();
+  return { message: `Index created on '${table}.${column}'` };
+}
+
+function getQueryPlan(sql) {
+  const p = parseSQL(sql);
+  const steps = [];
+  steps.push({ op: 'SCAN', detail: `Full table scan on '${p.table}'` });
+  if (p.where) steps.push({ op: 'FILTER', detail: `Apply WHERE condition` });
+  if (p.join) steps.push({ op: 'HASH JOIN', detail: `Join with '${p.join.table}'` });
+  if (p.groupBy) steps.push({ op: 'HASH AGGREGATE', detail: `GROUP BY ${p.groupBy.join(', ')}` });
+  if (p.orderBy) steps.push({ op: 'SORT', detail: `ORDER BY ${p.orderBy.map(o => o.col + ' ' + o.dir).join(', ')}` });
+  if (p.distinct) steps.push({ op: 'DISTINCT', detail: `Remove duplicates` });
+  if (p.limit) steps.push({ op: 'LIMIT', detail: `Return ${p.limit} rows` });
+  const idx = p.where && findIndex(p.table, p.where);
+  if (idx) steps.splice(1, 0, { op: 'INDEX SEEK', detail: `Using index on '${idx}'` });
+  return steps;
+}
+
+function findIndex(table, where) {
+  if (!where) return null;
+  for (const k in DB.indexes) {
+    if (k.startsWith(table + '.')) {
+      const col = k.split('.')[1];
+      if (where.col === col) return k;
+    }
+  }
+  return null;
+}
+
+function executeSelect(q) {
+  const table = DB.tables[q.table];
+  if (!table) throw new Error(`Table '${q.table}' not found`);
+  let rows = table.rows.map(r => ({ ...r }));
+  const aliases = { [q.table]: q.table };
+  if (q.join) {
+    const jtable = DB.tables[q.join.table];
+    if (!jtable) throw new Error(`Table '${q.join.table}' not found`);
+    if (q.join.alias) aliases[q.join.alias] = q.join.table;
+    const joined = [];
+    for (const r1 of rows) {
+      for (const r2 of jtable.rows) {
+        const a1 = q.join.on.split('=')[0].trim();
+        const a2 = q.join.on.split('=')[1].trim();
+        const col1 = a1.includes('.') ? a1.split('.')[1] : a1;
+        const col2 = a2.includes('.') ? a2.split('.')[1] : a2;
+        if (r1[col1] === r2[col2]) {
+          const merged = {};
+          for (const k in r1) merged[q.table + '.' + k] = r1[k];
+          for (const k in r2) merged[q.join.table + '.' + k] = r2[k];
+          merged._row = r1;
+          joined.push(merged);
+        }
+      }
+    }
+    rows = joined;
+  }
+  if (q.where) rows = rows.filter(r => evalWhere(r, q.where, aliases));
+  if (q.groupBy) return executeGroupBy(rows, q, aliases);
+  if (q.orderBy) {
+    const tableData = DB.tables[q.table];
+    rows.sort((a, b) => {
+      for (const o of q.orderBy) {
+        const col = resolveCol(o.col, aliases);
+        const va = a[col] !== undefined ? a[col] : a[q.table + '.' + col];
+        const vb = b[col] !== undefined ? b[col] : b[q.table + '.' + col];
+        if (va === null || va === undefined) return o.dir === 'ASC' ? -1 : 1;
+        if (vb === null || vb === undefined) return o.dir === 'ASC' ? 1 : -1;
+        if (va < vb) return o.dir === 'ASC' ? -1 : 1;
+        if (va > vb) return o.dir === 'ASC' ? 1 : -1;
+      }
+      return 0;
+    });
+  }
+  if (q.distinct) {
+    const seen = new Set();
+    rows = rows.filter(r => {
+      const sig = JSON.stringify(r);
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
+  }
+  if (q.offset) rows = rows.slice(q.offset);
+  if (q.limit) rows = rows.slice(0, q.limit);
+  const cols = resolveColumns(q.select, aliases);
+  return { columns: cols, rows: rows.map(r => pickCols(r, cols, aliases)) };
+}
+
+function resolveCol(col, aliases) {
+  if (col.includes('.')) return col;
+  return col;
+}
+
+function resolveColumns(selectList, aliases) {
+  if (selectList[0] === '*') {
+    const allCols = [];
+    for (const t in aliases) {
+      const tbl = DB.tables[aliases[t]];
+      if (tbl) tbl.columns.forEach(c => allCols.push(t === aliases[t] ? c.name : t + '.' + c.name));
+    }
+    return allCols;
+  }
+  return selectList;
+}
+
+function pickCols(row, cols, aliases) {
+  const out = {};
+  for (const c of cols) {
+    let v = row[c];
+    if (v === undefined) {
+      const parts = c.split('.');
+      if (parts.length === 2) v = row[parts[0] + '.' + parts[1]];
+      if (v === undefined && aliases[parts[0]]) {
+        const real = DB.tables[aliases[parts[0]]];
+        const colDef = real ? real.columns.find(x => x.name === parts[1]) : null;
+        if (colDef) v = row[parts[0] + '.' + parts[1]];
+      }
+    }
+    out[c] = v !== undefined ? v : null;
+  }
+  return out;
+}
+
+function evalWhere(row, w, aliases) {
+  if (w.and) return evalWhere(row, w.left, aliases) && evalWhere(row, w.right, aliases);
+  if (w.or) return evalWhere(row, w.left, aliases) || evalWhere(row, w.right, aliases);
+  if (w.not) return !evalWhere(row, w.cond, aliases);
+  const col = resolveCol(w.col, aliases);
+  let val = row[col];
+  if (val === undefined) val = row[w.col];
+  const cmp = w.val !== undefined ? w.val : w.val2;
+  if (w.op === 'LIKE') {
+    const pattern = String(cmp).replace(/%/g, '.*').replace(/_/g, '.');
+    return new RegExp('^' + pattern + '$', 'i').test(String(val));
+  }
+  if (w.op === 'IN') {
+    return w.vals.includes(val);
+  }
+  if (w.op === 'BETWEEN') {
+    return val >= w.val1 && val <= w.val2;
+  }
+  if (w.op === '=') return val == cmp;
+  if (w.op === '!=') return val != cmp;
+  if (w.op === '<>') return val != cmp;
+  if (w.op === '>') return val > cmp;
+  if (w.op === '<') return val < cmp;
+  if (w.op === '>=') return val >= cmp;
+  if (w.op === '<=') return val <= cmp;
+  return false;
+}
+
+function executeGroupBy(rows, q, aliases) {
+  const groups = new Map();
+  for (const r of rows) {
+    const key = q.groupBy.map(g => resolveCol(g, aliases)).map(c => r[c] !== undefined ? r[c] : r[q.table + '.' + c]).join('|||');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const result = [];
+  for (const [key, group] of groups) {
+    const out = {};
+    const keyParts = key.split('|||');
+    q.groupBy.forEach((g, i) => { out[g] = group[0][resolveCol(g, aliases)] || group[0][q.table + '.' + resolveCol(g, aliases)]; });
+    if (q.aggregates) {
+      for (const a of q.aggregates) {
+        const col = a.col === '*' ? null : (resolveCol(a.col, aliases));
+        const vals = group.map(r => col ? (r[col] !== undefined ? r[col] : r[q.table + '.' + col]) : r).filter(v => v != null);
+        if (a.fn === 'COUNT') out[a.alias || a.fn + '(' + a.col + ')'] = vals.length;
+        else if (a.fn === 'SUM') out[a.alias || a.fn + '(' + a.col + ')'] = vals.reduce((s, v) => s + Number(v), 0);
+        else if (a.fn === 'AVG') out[a.alias || a.fn + '(' + a.col + ')'] = vals.reduce((s, v) => s + Number(v), 0) / vals.length;
+        else if (a.fn === 'MIN') out[a.alias || a.fn + '(' + a.col + ')'] = Math.min(...vals.map(Number));
+        else if (a.fn === 'MAX') out[a.alias || a.fn + '(' + a.col + ')'] = Math.max(...vals.map(Number));
+      }
+    }
+    result.push(out);
+  }
+  const cols = Object.keys(result[0] || {});
+  return { columns: cols, rows: result };
+}
+
+function parseSQL(sql) {
+  sql = sql.trim().replace(/;$/, '').trim();
+  const upper = sql.toUpperCase();
+  if (upper.startsWith('CREATE TABLE')) return { type: 'CREATE_TABLE', ...parseCreateTable(sql) };
+  if (upper.startsWith('CREATE INDEX')) return { type: 'CREATE_INDEX', ...parseCreateIndex(sql) };
+  if (upper.startsWith('INSERT')) return { type: 'INSERT', ...parseInsert(sql) };
+  if (upper.startsWith('UPDATE')) return { type: 'UPDATE', ...parseUpdate(sql) };
+  if (upper.startsWith('DELETE')) return { type: 'DELETE', ...parseDelete(sql) };
+  if (upper.startsWith('EXPLAIN')) return { type: 'EXPLAIN', sql: sql.substring(7).trim() };
+  if (upper.startsWith('SELECT')) return { type: 'SELECT', ...parseSelect(sql) };
+  throw new Error('Unsupported SQL: ' + sql.substring(0, 30));
+}
+
+function parseCreateTable(sql) {
+  const m = sql.match(/CREATE\s+TABLE\s+(\w+)\s*\((.+)\)/i);
+  if (!m) throw new Error('Invalid CREATE TABLE syntax');
+  const columns = m[2].split(',').map(c => {
+    const parts = c.trim().split(/\s+/);
+    return { name: parts[0].replace(/"/g, ''), type: (parts[1] || 'TEXT').toUpperCase() };
+  });
+  return { table: m[1], columns };
+}
+
+function parseCreateIndex(sql) {
+  const m = sql.match(/CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\((\w+)\)/i);
+  if (!m) throw new Error('Invalid CREATE INDEX syntax');
+  return { indexName: m[1], table: m[2], column: m[3] };
+}
+
+function parseInsert(sql) {
+  const m = sql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\((.+)\)/i);
+  if (!m) throw new Error('Invalid INSERT syntax');
+  const cols = m[2].split(',').map(c => c.trim());
+  const vals = m[3].split(',').map(v => {
+    v = v.trim();
+    if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"')))
+      return v.slice(1, -1);
+    return v;
+  });
+  return { table: m[1], columns: cols, values: vals };
+}
+
+function parseUpdate(sql) {
+  const m = sql.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$/i);
+  if (!m) throw new Error('Invalid UPDATE syntax');
+  const sets = m[2].split(',').map(s => {
+    const [col, val] = s.split('=').map(x => x.trim().replace(/'/g, ''));
+    return { col, val };
+  });
+  return { table: m[1], sets, where: m[3] ? parseWhere(m[3]) : null };
+}
+
+function parseDelete(sql) {
+  const m = sql.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+))?$/i);
+  if (!m) throw new Error('Invalid DELETE syntax');
+  return { table: m[1], where: m[2] ? parseWhere(m[2]) : null };
+}
+
+function parseSelect(sql) {
+  const result = { joins: [], aggregates: [] };
+  let s = sql;
+  const mainMatch = s.match(/SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i);
+  if (!mainMatch) throw new Error('Invalid SELECT syntax');
+  result.table = mainMatch[2];
+  result.alias = mainMatch[3] || null;
+  const selectRaw = mainMatch[1];
+  result.select = selectRaw.split(',').map(x => x.trim());
+  result.select = result.select.map(s => {
+    const aggMatch = s.match(/(COUNT|SUM|AVG|MIN|MAX)\s*\(\s*(\*|\w+)\s*\)(?:\s+(?:AS\s+)?(\w+))?/i);
+    if (aggMatch) {
+      result.aggregates.push({ fn: aggMatch[1].toUpperCase(), col: aggMatch[2], alias: aggMatch[3] });
+      return aggMatch[3] || aggMatch[1] + '(' + aggMatch[2] + ')';
+    }
+    return s;
+  });
+  s = s.substring(mainMatch.index + mainMatch[0].length);
+  const joinReg = /(?:INNER\s+)?JOIN\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?\s+ON\s+(\w+\.\w+\s*=\s*\w+\.\w+)/gi;
+  let jm;
+  while ((jm = joinReg.exec(s)) !== null) {
+    result.joins.push({ table: jm[1], alias: jm[2] || jm[1], on: jm[3] });
+  }
+  const whereMatch = s.match(/WHERE\s+(.+?)(?:\s+GROUP\s+BY|\s+ORDER\s+BY|\s+LIMIT|\s*$)/i);
+  if (whereMatch) result.where = parseWhere(whereMatch[1].trim());
+  const gbyMatch = s.match(/GROUP\s+BY\s+(.+?)(?:\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s*$)/i);
+  if (gbyMatch) result.groupBy = gbyMatch[1].split(',').map(c => c.trim());
+  const obyMatch = s.match(/ORDER\s+BY\s+(.+?)(?:\s+LIMIT|\s*$)/i);
+  if (obyMatch) {
+    result.orderBy = obyMatch[1].split(',').map(o => {
+      const parts = o.trim().split(/\s+/);
+      return { col: parts[0], dir: (parts[1] || 'ASC').toUpperCase() };
+    });
+  }
+  const limMatch = s.match(/LIMIT\s+(\d+)/i);
+  if (limMatch) result.limit = parseInt(limMatch[1]);
+  const offMatch = s.match(/OFFSET\s+(\d+)/i);
+  if (offMatch) result.offset = parseInt(offMatch[1]);
+  const distMatch = s.match(/DISTINCT/i);
+  result.distinct = !!distMatch;
+  if (result.joins.length > 0) {
+    result.join = result.joins[0];
+  }
+  return result;
+}
+
+function parseWhere(s) {
+  s = s.trim();
+  const andParts = splitTop(s, ' AND ');
+  if (andParts.length > 1) {
+    return { and: true, left: parseWhere(andParts[0]), right: parseWhere(andParts.slice(1).join(' AND ')) };
+  }
+  const orParts = splitTop(s, ' OR ');
+  if (orParts.length > 1) {
+    return { or: true, left: parseWhere(orParts[0]), right: parseWhere(orParts.slice(1).join(' OR ')) };
+  }
+  if (s.toUpperCase().startsWith('NOT ')) {
+    return { not: true, cond: parseWhere(s.substring(4)) };
+  }
+  const betweenMatch = s.match(/(\w+(?:\.\w+)?)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)/i);
+  if (betweenMatch) {
+    return { col: betweenMatch[1], op: 'BETWEEN', val1: parseVal(betweenMatch[2]), val2: parseVal(betweenMatch[3]) };
+  }
+  const inMatch = s.match(/(\w+(?:\.\w+)?)\s+IN\s*\((.+)\)/i);
+  if (inMatch) {
+    const vals = inMatch[2].split(',').map(v => parseVal(v.trim()));
+    return { col: inMatch[1], op: 'IN', vals };
+  }
+  const likeMatch = s.match(/(\w+(?:\.\w+)?)\s+LIKE\s+(.+)/i);
+  if (likeMatch) {
+    return { col: likeMatch[1], op: 'LIKE', val: parseVal(likeMatch[2]) };
+  }
+  const opMatch = s.match(/(\w+(?:\.\w+)?)\s*(!=|<>|>=|<=|=|>|<)\s*(.+)/);
+  if (opMatch) {
+    return { col: opMatch[1], op: opMatch[2], val: parseVal(opMatch[3]) };
+  }
+  throw new Error('Cannot parse WHERE: ' + s);
+}
+
+function splitTop(s, delim) {
+  const parts = [];
+  let depth = 0, start = 0, i = 0;
+  while (i < s.length) {
+    if (s[i] === '(') depth++;
+    else if (s[i] === ')') depth--;
+    else if (depth === 0 && s.substring(i, i + delim.length).toUpperCase() === delim.toUpperCase()) {
+      parts.push(s.substring(start, i));
+      start = i + delim.length;
+      i += delim.length - 1;
+    }
+    i++;
+  }
+  parts.push(s.substring(start));
+  return parts;
+}
+
+function parseVal(s) {
+  s = s.trim();
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"')))
+    return s.slice(1, -1);
+  if (s === 'NULL') return null;
+  if (s === 'true' || s === 'TRUE') return true;
+  if (s === 'false' || s === 'FALSE') return false;
+  const n = Number(s);
+  if (!isNaN(n)) return n;
+  return s;
+}
+
+function runQuery() {
+  const sql = document.getElementById('editor').value.trim();
+  if (!sql) return;
+  const startTime = performance.now();
+  try {
+    const parsed = parseSQL(sql);
+    let result;
+    if (parsed.type === 'CREATE_TABLE') {
+      result = createTable(parsed.table, parsed.columns);
+    } else if (parsed.type === 'CREATE_INDEX') {
+      result = createIndex(parsed.table, parsed.column);
+    } else if (parsed.type === 'INSERT') {
+      result = insertRow(parsed.table, parsed.values);
+    } else if (parsed.type === 'DELETE') {
+      result = deleteRows(parsed.table, parsed.where ? (r => evalWhere(r, parsed.where, {})) : (() => true));
+    } else if (parsed.type === 'UPDATE') {
+      result = updateRows(parsed.table, r => { parsed.sets.forEach(s => { r[s.col] = parseVal(s.val); }); }, parsed.where ? (r => evalWhere(r, parsed.where, {})) : null);
+    } else if (parsed.type === 'EXPLAIN') {
+      const plan = getQueryPlan(parsed.sql);
+      showPlan(plan, sql);
+      return;
+    } else if (parsed.type === 'SELECT') {
+      if (parsed.joins && parsed.joins.length > 0) parsed.join = parsed.joins[0];
+      result = executeSelect(parsed);
+    }
+    const elapsed = (performance.now() - startTime).toFixed(2);
+    if (result && result.columns) {
+      showResults(result.columns, result.rows, elapsed);
+    } else {
+      showMessage(result.message, 'success', elapsed);
+    }
+    updateSidebar();
+  } catch (e) {
+    showMessage('Error: ' + e.message, 'error');
+  }
+}
+
+function showResults(columns, rows, elapsed) {
+  const area = document.getElementById('resultsArea');
+  let html = `<div class="results-header"><span>Results</span><span class="row-count">${rows.length} row(s)</span><span class="exec-time">Execution: ${elapsed}ms</span></div>`;
+  html += '<table class="results"><thead><tr>';
+  columns.forEach(c => { html += `<th>${c}</th>`; });
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += '<tr>';
+    columns.forEach(c => {
+      const v = r[c];
+      html += v === null ? '<td class="null-val">NULL</td>' : `<td>${v}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  area.innerHTML = html;
+}
+
+function showMessage(msg, type, elapsed) {
+  const area = document.getElementById('resultsArea');
+  area.innerHTML = `<div class="message ${type}">${msg}${elapsed ? ' <span style="float:right;color:var(--text2)">Execution: ' + elapsed + 'ms</span>' : ''}</div>`;
+}
+
+function showPlan(steps, sql) {
+  document.getElementById('planPanel').classList.add('active');
+  document.getElementById('editorPanel').style.display = 'none';
+  document.getElementById('resultsArea').style.display = 'none';
+  const vis = document.getElementById('planVis');
+  let html = `<div class="message info">EXPLAIN: ${sql}</div><div style="margin-top:12px">`;
+  steps.forEach((s, i) => {
+    const indent = i * 20;
+    html += `<div style="padding-left:${indent}px;margin:4px 0"><span style="color:var(--keyword);font-weight:600">${s.op}</span> <span style="color:var(--text2)">${s.detail}</span></div>`;
+  });
+  html += '</div>';
+  vis.innerHTML = html;
+}
+
+function updateSidebar() {
+  const sb = document.getElementById('sidebar');
+  let html = '<h3>Tables</h3>';
+  for (const name in DB.tables) {
+    const t = DB.tables[name];
+    html += `<div class="schema-item" onclick="insertExample('SELECT * FROM ${name};')"><span class="icon">T</span>${name}<span style="color:var(--text2);margin-left:auto">${t.rows.length}</span></div>`;
+    t.columns.forEach(c => {
+      html += `<div class="col-item"><span>${c.name}</span><span class="type">${c.type}</span></div>`;
+    });
+  }
+  html += '<h3>Indexes</h3>';
+  for (const k in DB.indexes) {
+    html += `<div class="schema-item"><span class="icon">I</span>${k}</div>`;
+  }
+  sb.innerHTML = html;
+}
+
+function updateBtreeVis() {
+  const vis = document.getElementById('btreeVis');
+  let html = '';
+  for (const k in DB.indexes) {
+    const idx = DB.indexes[k];
+    html += `<div style="margin-bottom:20px"><strong style="color:var(--accent)">${k}</strong><div style="margin-top:8px">`;
+    html += renderTreeNode(idx.tree.root, 0);
+    html += '</div></div>';
+  }
+  vis.innerHTML = html || '<div class="message info">No indexes yet. Run: CREATE INDEX idx ON table (col);</div>';
+}
+
+function renderTreeNode(node, depth) {
+  if (!node) return '';
+  const indent = depth * 16;
+  let html = `<div style="margin-left:${indent}px;margin-bottom:4px">`;
+  if (node.type === 'leaf') {
+    html += `<div class="tree-node leaf"><div class="keys">Leaf: [${node.keys.map(k => k === null ? 'NULL' : k).join(', ')}]</div><div class="ptr">rids: [${node.rids.join(', ')}]</div></div>`;
+  } else {
+    html += `<div class="tree-node"><div class="keys">Internal: [${node.keys.map(k => k === null ? 'NULL' : k).join(', ')}]</div></div>`;
+    if (node.children) {
+      node.children.forEach(c => { html += renderTreeNode(c, depth + 1); });
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+function updateStorageVis() {
+  const vis = document.getElementById('storageVis');
+  let html = '';
+  for (const name in DB.pages) {
+    const pages = DB.pages[name];
+    html += `<div style="margin-bottom:12px"><strong style="color:var(--accent)">${name}</strong> (${pages.length} pages)<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">`;
+    pages.forEach(p => {
+      const fill = (p.rows.length / p.capacity) * 100;
+      html += `<div class="page-block"><div class="pid">Page ${p.id}</div><div class="rows">${p.rows.length}/${p.capacity} rows</div><div class="bar"><div class="bar-fill" style="width:${fill}%"></div></div></div>`;
+    });
+    html += '</div></div>';
+  }
+  vis.innerHTML = html || '<div class="message info">No data yet.</div>';
+}
+
+function highlightSQL(code) {
+  let h = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color:var(--comment)">$1</span>');
+  h = h.replace(/('.*?'|".*?")/g, '<span style="color:var(--string)">$1</span>');
+  h = h.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:var(--number)">$1</span>');
+  h = h.replace(/\b(CREATE|TABLE|INSERT|INTO|VALUES|SELECT|FROM|WHERE|UPDATE|SET|DELETE|JOIN|INNER|ON|GROUP|BY|ORDER|ASC|DESC|LIMIT|OFFSET|AND|OR|NOT|LIKE|IN|BETWEEN|DISTINCT|INDEX|EXPLAIN|AS|NULL|TRUE|FALSE|INTEGER|TEXT|BOOLEAN|FLOAT|COUNT|SUM|AVG|MIN|MAX)\b/gi, '<span style="color:var(--keyword)">$1</span>');
+  return h;
+}
+
+function updateHighlight() {
+  const editor = document.getElementById('editor');
+  const highlight = document.getElementById('highlight');
+  const lineNums = document.getElementById('lineNumbers');
+  highlight.innerHTML = highlightSQL(editor.value) + '\n';
+  const lines = editor.value.split('\n').length;
+  lineNums.innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('<br>');
+}
+
+function syncScroll() {
+  const editor = document.getElementById('editor');
+  const highlight = document.getElementById('highlight');
+  const lineNums = document.getElementById('lineNumbers');
+  highlight.scrollTop = editor.scrollTop;
+  highlight.scrollLeft = editor.scrollLeft;
+  lineNums.scrollTop = editor.scrollTop;
+}
+
+function clearEditor() {
+  document.getElementById('editor').value = '';
+  updateHighlight();
+  document.getElementById('resultsArea').innerHTML = '';
+}
+
+function insertExample(sql) {
+  document.getElementById('editor').value = sql;
+  updateHighlight();
+}
+
+function loadDemo() {
+  createTable('departments', [
+    { name: 'id', type: 'INTEGER' },
+    { name: 'dept_name', type: 'TEXT' },
+    { name: 'location', type: 'TEXT' }
+  ]);
+  insertRow('departments', [1, 'Engineering', 'Building A']);
+  insertRow('departments', [2, 'Marketing', 'Building B']);
+  insertRow('departments', [3, 'Finance', 'Building A']);
+  insertRow('departments', [4, 'HR', 'Building C']);
+  createTable('employees', [
+    { name: 'id', type: 'INTEGER' },
+    { name: 'name', type: 'TEXT' },
+    { name: 'dept_id', type: 'INTEGER' },
+    { name: 'salary', type: 'INTEGER' },
+    { name: 'active', type: 'BOOLEAN' }
+  ]);
+  const names = ['Alice Johnson','Bob Smith','Charlie Brown','Diana Prince','Eve Davis','Frank Wilson','Grace Lee','Henry Taylor','Ivy Chen','Jack Miller','Karen White','Leo Garcia'];
+  const depts = [1,1,2,1,3,2,3,1,4,2,3,4];
+  const salaries = [95000,82000,78000,110000,88000,72000,91000,105000,65000,76000,83000,68000];
+  names.forEach((n, i) => insertRow('employees', [i+1, n, depts[i], salaries[i], 'true']));
+  createTable('orders', [
+    { name: 'id', type: 'INTEGER' },
+    { name: 'emp_id', type: 'INTEGER' },
+    { name: 'product', type: 'TEXT' },
+    { name: 'amount', type: 'FLOAT' },
+    { name: 'order_date', type: 'TEXT' }
+  ]);
+  const products = ['Laptop','Phone','Monitor','Keyboard','Mouse','Headset'];
+  const amounts = [1200.50,800.00,450.00,120.00,45.00,250.00];
+  for (let i = 0; i < 20; i++) {
+    insertRow('orders', [i+1, Math.ceil(Math.random()*12), products[i%6], amounts[i%6], `2024-${String(Math.ceil(Math.random()*12)).padStart(2,'0')}-${String(Math.ceil(Math.random()*28)).padStart(2,'0')}`]);
+  }
+  createIndex('employees', 'name');
+  showMessage('Demo database loaded: departments, employees, orders with index on employees.name', 'info');
+  updateStorageVis();
+  updateBtreeVis();
+}
+
+document.getElementById('editor').addEventListener('input', updateHighlight);
+document.getElementById('editor').addEventListener('scroll', syncScroll);
+document.getElementById('exampleQueries').addEventListener('change', e => {
+  if (e.target.value) { document.getElementById('editor').value = e.target.value; updateHighlight(); }
+  e.target.value = '';
+});
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const id = tab.dataset.tab;
+    document.getElementById('editorPanel').style.display = id === 'editor' ? 'flex' : 'none';
+    document.getElementById('resultsArea').style.display = id === 'editor' ? 'block' : 'none';
+    document.getElementById('btreePanel').classList.toggle('active', id === 'btree');
+    document.getElementById('storagePanel').classList.toggle('active', id === 'storage');
+    document.getElementById('planPanel').classList.toggle('active', id === 'plan');
+    if (id === 'btree') updateBtreeVis();
+    if (id === 'storage') updateStorageVis();
+  });
+});
+
+document.getElementById('editor').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); runQuery(); }
+  if (e.key === 'Tab') { e.preventDefault(); const s = e.target.selectionStart; e.target.value = e.target.value.substring(0, s) + '  ' + e.target.value.substring(e.target.selectionEnd); e.target.selectionStart = e.target.selectionEnd = s + 2; updateHighlight(); }
+});
+
+loadDemo();
+updateHighlight();
+</script>
+</body>
+</html>
